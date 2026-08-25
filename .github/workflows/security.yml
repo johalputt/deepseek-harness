@@ -1,0 +1,97 @@
+name: Security
+
+# Continuous security scanning over the same surfaces CI tests: GitHub's
+# static analysis (CodeQL), secret leakage (gitleaks), and known
+# vulnerabilities in the production dependency graph (pnpm audit). Weekly
+# cadence catches newly published CVEs in already-merged code; push/PR runs
+# catch regressions at the door.
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  schedule:
+    # 03:23 UTC every Monday — an off-the-hour minute avoids the top-of-hour
+    # runner allocation crunch shared with every default-cron workflow on GitHub.
+    - cron: '23 3 * * 1'
+
+permissions:
+  contents: read
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+  DSH_TELEMETRY_DISABLED: '1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codeql:
+    name: CodeQL / javascript-typescript
+    runs-on: ubuntu-latest
+    permissions:
+      # CodeQL needs write to upload SARIF results to the code scanning tab.
+      security-events: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      # Analyze the real dependency graph, not the source tree alone: type-aware
+      # queries resolve workspace imports only after install.
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: security-javascript-typescript
+
+  secrets:
+    name: gitleaks / secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full history: a secret removed from HEAD still leaks through older commits.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          # Required by gitleaks-action v2 on organization accounts; harmless on personal forks.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  audit:
+    name: pnpm audit / production dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      # The lockfile is the audited artifact — no install needed. Production-only
+      # keeps the gate on what ships; dev-tool advisories surface in PRs as noise,
+      # not as release blockers. High is the floor: moderate findings accumulate
+      # too many ecosystem false alarms to gate merges.
+      - name: Audit production dependency graph
+        run: pnpm audit --prod --audit-level high
