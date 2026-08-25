@@ -1975,6 +1975,16 @@ describe('ToolRuntime', () => {
       .toThrow('timeoutMs must be a positive finite number')
   })
 
+  it('rejects a timeout the timer enforcer cannot arm, at registration instead of first execution', async () => {
+    const ctx = await setup()
+    // One millisecond past MAX_TIMER_DELAY_MS: guard/timeout-policy would arm
+    // this as a Node timer on every call and fail each one, so registration
+    // refuses it here — a config-derived value (tool timeoutMs fields) fails
+    // loud at load rather than bricking the tool at runtime.
+    expect(() => ctx.tools.register({ ...echoTool, name: 'oversized-timeout', timeoutMs: 2_147_483_648 }))
+      .toThrow('tool "oversized-timeout" timeoutMs must be a positive finite number no greater than 2147483647')
+  })
+
   it('rejects duplicate names and unregisters on fiber dispose (HMR safety)', async () => {
     const ctx = await setup()
     ctx.tools.register(echoTool)
@@ -2712,6 +2722,13 @@ describe('defineTool validation (the runtime-validation Agent Note, part 1)', ()
       name: 'x', description: 'd', parameters: {}, timeoutMs: Infinity,
       async execute() { return [{ type: 'text' as const, text: 'ok' }] },
     })).toThrow('positive finite number')
+  })
+
+  it('throws when timeoutMs exceeds the largest delay Node can arm', () => {
+    expect(() => defineContentToolFixture({
+      name: 'x', description: 'd', parameters: {}, timeoutMs: 2_147_483_648,
+      async execute() { return [{ type: 'text' as const, text: 'ok' }] },
+    })).toThrow('defineTool(x): timeoutMs must be a positive finite number no greater than 2147483647')
   })
 })
 

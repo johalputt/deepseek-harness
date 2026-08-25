@@ -15,6 +15,7 @@ import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue, UserMessage } from '@deepseek-ai/dsh-session'
 import type { ToolProviderResult } from '@deepseek-ai/dsh-system-prompt'
 import type { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
+import { assertValidTimeoutMs } from '@deepseek-ai/dsh-timeout'
 // Type-only: makes `ctx.get('approval')` resolve to the ApprovalService
 // augmentation. The seam stays optional at runtime — see `serviceAsk`.
 import type {} from '@deepseek-ai/dsh-user-approval'
@@ -1048,6 +1049,11 @@ export class ToolRuntime extends Service {
       && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
       throw new TypeError(`tool "${name}" timeoutMs must be a positive finite number`)
     }
+    // The enforcer (guard/timeout-policy) arms this value as a Node timer on
+    // every execution; a delay past MAX_TIMER_DELAY_MS would pass the positive
+    // check here and then fail every call, so the misconfiguration is rejected
+    // where it is written instead of bricking the tool at runtime.
+    if (timeoutMs !== undefined) assertValidTimeoutMs(timeoutMs, `tool "${name}" timeoutMs`)
     // Reserved unconditionally: any agent may select a code mode for itself,
     // so a name free to take under the deployment default would become a
     // collision the moment a preset mounted.

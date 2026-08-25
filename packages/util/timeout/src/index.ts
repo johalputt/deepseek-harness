@@ -31,6 +31,19 @@ function assertTimerDelay(timeoutMs: number, name: string): void {
 }
 
 /**
+ * Validate a configuration value against what Node can actually arm: positive,
+ * finite, and within {@link MAX_TIMER_DELAY_MS}. Timer-owning config must be
+ * rejected where it is written — a value this function refuses would otherwise
+ * survive load and fail every later `deadline`/`idleWatchdog` call.
+ * @param timeoutMs - the candidate delay in milliseconds.
+ * @param name - field name used in the thrown message.
+ * @throws Error when the value is not an armable delay.
+ */
+export function assertValidTimeoutMs(timeoutMs: number, name: string): void {
+  assertTimerDelay(timeoutMs, name)
+}
+
+/**
  * Validate a caller's optional timeout hint, use the backend default, then cap
  * it. Supplied values must be positive and finite; zero is not a public
  * disable-timeout sentinel.

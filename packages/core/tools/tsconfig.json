@@ -36,6 +36,9 @@
       "path": "../../interaction/user-approval"
     },
     {
+      "path": "../../util/timeout"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]
