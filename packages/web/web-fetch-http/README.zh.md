@@ -23,6 +23,14 @@
 - 发送显式的产品 `User-Agent`，绝不伪装成浏览器。
 - 不受支持的内容类型（例如二进制）以 `WEB_UNSUPPORTED_CONTENT_TYPE` 拒绝。
 
+## 私有网络目标阻断
+
+启用 `blockPrivateNetworks` 时（默认值），一个目标只有在它解析出的**每一个**地址都是公开可路由的情况下才可抓取。被拒范围覆盖 loopback、RFC1918／局域网私有段、link-local（包括云元数据端点 `169.254.169.254`）、运营商级 NAT、multicast、基准测试／文档段，以及广播／保留段；判断对象包括 IPv4、原生 IPv6 以及内嵌 IPv4 的形式（`::ffff:` 映射、6to4、NAT64），格式错误的地址一律按失败关闭处理。拒绝时报 `WEB_PRIVATE_NETWORK`。
+
+检查在每一跳运行**两次**：预检解析在建立任何套接字之前快速失败，连接分发器则在连接时刻针对套接字实际打开的地址重新验证，封死「先解析后连接」的窗口（DNS rebinding）。重定向目标是独立的跳，逐跳同样拒绝；一次解析返回的多个地址中只要有一个非公开就整体拒绝该域名，因此恶意权威服务器无法把私有记录藏在公开记录后面。
+
+只有当抓取私有服务本身就是目的时才关闭它（例如让模型访问本机 loopback 上的开发服务器）：`blockPrivateNetworks: false` 恢复普通的直接抓取行为。
+
 ## 配置
 
 | 配置键 | 默认值 | 含义 |
@@ -33,6 +41,7 @@
 | `timeoutMs` | `30_000` | Node 定时器范围内的抓取超时：直接 `ctx.web.fetch()` 调用方的资源兜底，而非面向模型的工具调用预算（后者属于 `dsh-tool-call-timeout-policy`）。 |
 | `maxRedirects` | `5` | 同源重定向最大跳数（`0` 表示完全不跟随）。 |
 | `userAgent` | `deepseek-harness/…` | `User-Agent` 标头。 |
+| `blockPrivateNetworks` | `true` | 拒绝其主机解析为非公开地址的目标（`WEB_PRIVATE_NETWORK`）。 |
 
 数值限制会在插件构造时验证：除 `maxRedirects` 外，每个上限都必须是正的有限数；`maxRedirects` 必须是非负整数。无效值会抛出异常，不会静默构造限制荒谬的提供方。
 
@@ -46,6 +55,6 @@
 
 ## 已知限制与暂缓事项
 
-- **SSRF／私有网络防护暂缓**：不会阻止私有、loopback、link-local、multicast 或其他非公开目标，也不进行 DNS 解析后验证或逐跳重新验证（见 [web 能力 seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.zh.md)）。在此功能落地前，该提供方是 SSRF 原语；能够访问敏感内部网络目标的部署**禁止启用它**。
+- **私有网络防线信任平台解析器**：`blockPrivateNetworks` 会验证 DNS 返回的每个地址并在连接时刻重新验证，但解析器层面的绕过（例如操作系统在 `getaddrinfo` 之外解析的 mDNS 名称，或本地从不解析 CONNECT 目标的代理部署）不在范围内；需要这些形态的部署必须叠加自己的出口策略。
 - **只解码文本内容**：包括 html/xhtml 与 `text/*` 加 JSON/XML 家族；缺少 `Content-Type` 或任何二进制类型都会抛出 `WEB_UNSUPPORTED_CONTENT_TYPE`，可提取文本的 PDF 解码属于明确的暂缓工作。
 - **charset 只来自 `Content-Type` 标头**（默认为 UTF-8）：HTML `<meta charset>` 声明会被忽略；声明但无法识别的 charset 标签会抛出异常，而非回退。

@@ -23,6 +23,14 @@ A shipping web-tool deployment sets the provider backstop above the tool budget,
 - Sends an explicit product `User-Agent`, never a browser disguise.
 - Rejects unsupported (e.g. binary) content types with `WEB_UNSUPPORTED_CONTENT_TYPE`.
 
+## Private-network destination blocking
+
+With `blockPrivateNetworks` enabled (the default), a destination is fetchable only when **every** address it resolves to is publicly routable. Refused ranges cover loopback, RFC1918/LAN private space, link-local (including the cloud metadata endpoint `169.254.169.254`), carrier-grade NAT, multicast, benchmarking/documentation ranges, and broadcast/reserved space — judged on IPv4, native IPv6, and the embedded-IPv4 forms (`::ffff:` mapped, 6to4, NAT64), with malformed addresses failing closed. A refusal reports `WEB_PRIVATE_NETWORK`.
+
+The check runs **twice per hop**: a pre-flight resolution fails fast before any socket exists, and the connection dispatcher re-validates at connect time against whatever address the socket actually opens, closing the resolve-then-connect gap (DNS rebinding). Redirect targets are separate hops and are each refused the same way; one non-public answer among several rejects the whole name, so a hostile authoritative server cannot hide a private record behind a public one.
+
+Disable it only where fetching private services is the point (e.g. pointing the model at loopback dev servers): `blockPrivateNetworks: false` restores plain ambient fetching.
+
 ## Config
 
 | Key | Default | Meaning |
@@ -33,6 +41,7 @@ A shipping web-tool deployment sets the provider backstop above the tool budget,
 | `timeoutMs` | `30_000` | Fetch timeout within Node's timer range — a resource backstop for direct `ctx.web.fetch()` callers, not the model-facing tool-call budget (that is `dsh-tool-call-timeout-policy`). |
 | `maxRedirects` | `5` | Maximum same-origin redirect hops (`0` follows none). |
 | `userAgent` | `deepseek-harness/…` | `User-Agent` header. |
+| `blockPrivateNetworks` | `true` | Refuse destinations whose host resolves to a non-public address (`WEB_PRIVATE_NETWORK`). |
 
 The numeric limits are validated at plugin construction: every cap except `maxRedirects` must be a positive finite number, and `maxRedirects` must be a non-negative integer. An invalid value throws rather than silently constructing a provider with nonsensical limits.
 
@@ -46,6 +55,6 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 
 ## Known Limitations and Deferred Work
 
-- **SSRF / private-network protection is deferred** — no blocking of private, loopback, link-local, multicast, or otherwise non-public destinations, no DNS-resolve-then-validate, no per-hop re-validation (see [the web capability seam Agent Note](../../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md)). Until it lands, this provider is an SSRF primitive and **must not be enabled** in a deployment that can reach sensitive internal network targets.
+- **The private-network fence trusts the platform resolver** — `blockPrivateNetworks` validates every address DNS returns and re-validates at connect time, but a resolver-level bypass (e.g. an mDNS name the OS resolves outside `getaddrinfo`, or a proxy deployment whose CONNECT target is never resolved locally) is out of scope; deployments needing those shapes must layer their own egress policy.
 - **Only textual content decodes** — html/xhtml and `text/*`-plus-JSON/XML families; a missing `Content-Type` or any binary type throws `WEB_UNSUPPORTED_CONTENT_TYPE`, and text-extractable PDF decoding is named deferred work.
 - **Charset comes only from the `Content-Type` header** (UTF-8 default) — an HTML `<meta charset>` declaration is ignored, and a declared-but-unrecognized charset label throws rather than falling back.
