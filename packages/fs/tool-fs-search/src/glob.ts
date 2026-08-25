@@ -81,8 +81,12 @@ export function parseGlobArgs(args: { pattern: string; path?: string }): GlobInp
  * is a plain argv element — no shell layer exists, so no quoting applies; the
  * search root rides behind `--` so a leading-dash path can never be parsed as
  * a flag. `--sort=modified` orders by modification time, `--no-ignore
- * --hidden` searches ignored and hidden files, and
- * {@link GLOB_VCS_EXCLUDES} keeps VCS metadata out.
+ * --hidden` searches ignored and hidden files,
+ * {@link GLOB_VCS_EXCLUDES} keeps VCS metadata out, and `-0` NUL-terminates
+ * each printed path: a POSIX filename may contain a newline, so newline
+ * framing would let one planted filename fabricate additional result paths —
+ * NUL cannot appear in any filename, making each record unambiguous (the
+ * same framing reason `grep` parses `--json`).
  *
  * @param input - the validated arguments.
  * @returns the complete ripgrep argument vector (excluding the binary itself).
@@ -90,6 +94,7 @@ export function parseGlobArgs(args: { pattern: string; path?: string }): GlobInp
 export function buildGlobCommand(input: GlobInput): string[] {
   const parts = [
     '--files',
+    '-0',
     `--glob=${input.pattern}`,
     '--sort=modified',
     '--no-ignore',
@@ -346,9 +351,11 @@ export function applyGlobTool(ctx: Context, caps: GlobToolCaps): void {
       if (run.noMatches) return { root, paths: [] }
 
       const all: string[] = []
-      for (const line of run.stdout.split('\n')) {
-        if (line.length === 0) continue
-        const displayPath = toWorkdirRelative(line, run.workdir)
+      // NUL-framed records (the `-0` argv): a record may itself contain
+      // newlines because a POSIX filename can — it is still exactly one path.
+      for (const record of run.stdout.split('\0')) {
+        if (record.length === 0) continue
+        const displayPath = toWorkdirRelative(record, run.workdir)
         all.push(displayPath)
       }
       return { root, paths: all }
