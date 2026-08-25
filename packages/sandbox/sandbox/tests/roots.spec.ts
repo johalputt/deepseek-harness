@@ -31,9 +31,19 @@ describe('writableRoots', () => {
     const ws = mkdtempSync(join(tmpdir(), 'dsh-ws-'))
     const roots = writableRoots({ mode: 'workspace-write', workspaceRoot: ws })
     expect(roots).toContain(realpathSync.native(ws))
-    expect(roots).toContain(canonicalPath('/tmp'))
     expect(roots).toContain(realpathSync.native(tmpdir()))
     // Deduplicated after canonicalization (/tmp and os.tmpdir() may coincide).
     expect(new Set(roots).size).toBe(roots.length)
+  })
+
+  it('grants the POSIX /tmp spelling only off Windows (Node would re-root the literal to <drive>:\\tmp there)', () => {
+    const roots = writableRoots({ mode: 'workspace-write', workspaceRoot: process.cwd() })
+    if (process.platform === 'win32') {
+      // The literal must be absent even when C:\tmp exists on the host —
+      // os.tmpdir() remains the only temp grant.
+      expect(roots).not.toContain(canonicalPath('/tmp'))
+    } else {
+      expect(roots).toContain(canonicalPath('/tmp'))
+    }
   })
 })

@@ -46,10 +46,20 @@ export function canonicalPath(path: string): string {
  * `workspace-write` allows the policy's workspace root, the host `/tmp`, and
  * the per-user platform temp dir (`os.tmpdir()` — the real temp area for
  * mkstemp-family tools; omitting it would deny what the mode promises).
+ *
+ * `/tmp` is a POSIX spelling only: on Windows Node re-roots the literal
+ * against the process drive, so an unconditional entry would grant
+ * `<drive>:\tmp` whenever that directory happens to exist — a machine-wide,
+ * ambient root the Windows ACL runner never grants, breaking the fs/bash
+ * parity this module owns in the permissive direction.
  * @param policy - the file-effect policy to derive the allow-list from.
  * @returns the canonical writable roots; empty exactly under `read-only`.
  */
 export function writableRoots(policy: SandboxExecutionPolicy): string[] {
   if (policy.mode !== 'workspace-write') return []
-  return [...new Set([policy.workspaceRoot, '/tmp', tmpdir()].map(canonicalPath))]
+  return [...new Set([
+    policy.workspaceRoot,
+    ...(process.platform === 'win32' ? [] : ['/tmp']),
+    tmpdir(),
+  ].map(canonicalPath))]
 }
