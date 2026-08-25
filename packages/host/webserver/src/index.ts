@@ -182,7 +182,18 @@ export class WebServer extends Service {
     // rejection killing the process on one malformed request (bad %-escape,
     // client dropping mid-body). Per-request failures log and answer 400 —
     // never a process exit.
+    //
+    // Anti-framing headers ride at this one entry point every response
+    // passes: setHeader merges with later writeHead calls (writeHead wins
+    // per field), so route and fallback handlers keep their own headers.
+    // The browser-trust fence deliberately passes a framed load — an iframe
+    // navigation to this origin carries loopback Host, same-origin
+    // sec-fetch-site, and matching Origin — so embedding is the one
+    // cross-site path that still reaches the approval UI, and it is denied
+    // unconditionally as a fixed security invariant rather than config.
     this.server = createServer((req, res) => {
+      res.setHeader('x-frame-options', 'DENY')
+      res.setHeader('content-security-policy', "frame-ancestors 'none'")
       handle(req, res).catch((err: unknown) => {
         this.ctx.logger.warn(err instanceof Error ? err : new Error(String(err)))
         if (res.headersSent) {

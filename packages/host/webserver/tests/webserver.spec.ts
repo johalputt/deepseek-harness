@@ -137,6 +137,15 @@ describe('real Loader composition', () => {
     expect((await request(port, '/%zz')).status).toBe(400)
     expect(await request(port, '/probe')).toMatchObject({ status: 200, body: 'EXACT' })
 
+    // Anti-framing headers ride on every response from the single entry
+    // point — named routes, the fallback owner, and the bare unclaimed 404
+    // alike — so the approval UI can never be embedded by another origin.
+    for (const path of ['/probe', '/no/such/route']) {
+      const response = await fetch(`http://127.0.0.1:${String(port)}${path}`)
+      expect(response.headers.get('x-frame-options')).toBe('DENY')
+      expect(response.headers.get('content-security-policy')).toBe("frame-ancestors 'none'")
+    }
+
     // Duplicate (kind, path) is a misconfiguration and throws; the disposer
     // restores registrability (register/disposer symmetry).
     expect(() => server.register({ kind: 'exact', path: '/probe', handler: () => {} }))
